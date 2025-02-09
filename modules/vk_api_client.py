@@ -29,7 +29,7 @@ class VKClient:
         try:
             response = self.vk.wall.get(
                 owner_id=self.config.get('vk_user_id'),
-                count=100,
+                count=10,
                 filter='owner'
             )
             return response['items']

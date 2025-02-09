@@ -1,5 +1,7 @@
+# modules/config_handler.py
 import json
 import os
+import time
 import logging
 
 class ConfigHandler:
@@ -19,7 +21,7 @@ class ConfigHandler:
             "tg_channel_id": "",
             "tg_bot_token": "",
             "vk_access_token": "",
-            "last_post_id": 0,
+            "last_post_date": time.time(),
             "log_level": "INFO"
         }
 
