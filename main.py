@@ -1,6 +1,7 @@
 # main.py
 import asyncio
 import logging
+import sys
 import os
 from modules.config_handler import ConfigHandler
 from modules.vk_api_client import VKClient
@@ -10,7 +11,7 @@ from configurator import Configurator
 class VK2TG:
     def __init__(self):
         self._setup_logging(logging.INFO)
-        self.config = ConfigHandler()
+        self.config = ConfigHandler(sys.argv[1] if len(sys.argv)>1 else None)
         
         log_level_str = self.config.get('log_level') or 'INFO'
         log_level = getattr(logging, log_level_str.upper(), logging.INFO)
