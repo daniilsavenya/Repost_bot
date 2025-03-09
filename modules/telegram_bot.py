@@ -3,7 +3,7 @@ import requests
 import uuid
 from urllib.parse import urlparse
 from aiogram import Bot
-from aiogram.types import InputMediaPhoto, InputMediaVideo, InputFile
+from aiogram.types import InputMediaPhoto, InputMediaVideo
 import logging
 import asyncio
 
@@ -17,9 +17,11 @@ class TelegramPoster:
         logging.info('Telegram bot initialized')
 
     def _init_files_dir(self):
+        """Создаёт папку для временных файлов"""
         os.makedirs(self.files_dir, exist_ok=True)
 
     def _is_valid_url(self, url):
+        """Проверяет валидность URL"""
         try:
             result = urlparse(url)
             return all([result.scheme, result.netloc])
@@ -27,6 +29,7 @@ class TelegramPoster:
             return False
 
     def _download_file(self, url, file_name=None):
+        """Скачивает файл во временную папку"""
         if not self._is_valid_url(url):
             raise ValueError(f"Invalid URL: {url}")
         
@@ -34,6 +37,7 @@ class TelegramPoster:
             response = requests.get(url, stream=True)
             response.raise_for_status()
             
+            # Генерируем имя файла если не указано
             if not file_name:
                 file_name = os.path.basename(urlparse(url).path) or f"file_{uuid.uuid4().hex}"
             
@@ -49,10 +53,12 @@ class TelegramPoster:
             return None
 
     async def process_post(self, post):
+        """Основной метод обработки поста"""
         try:
             main_message = None
             repost = post.get('copy_history', [None])[0] if 'copy_history' in post else None
 
+            # Обработка основного поста
             if post.get('text') or post.get('attachments'):
                 main_message = await self._send_content(
                     text=post.get('text', ''),
@@ -60,6 +66,7 @@ class TelegramPoster:
                     reply_to=None
                 )
 
+            # Обработка репоста
             if repost:
                 author = self.vk_client.get_author_name(repost['owner_id'])
                 repost_text = f"↘️ Repost from {author}"
@@ -76,23 +83,28 @@ class TelegramPoster:
             logging.exception(f"Post processing failed: {e}")
 
     async def _send_content(self, text, attachments, reply_to):
+        """Отправка основного контента"""
         media_group = []
         message = None
         
+        # Формируем медиа-группу
         for att in attachments:
             media = self._process_attachment(att)
             if media:
                 media_group.append(media)
 
+        # Отправляем текст или медиа-группу
         if len(text) > 1024 or (not media_group and text):
             message = await self._send_text(text, reply_to)
         elif media_group:
             message = await self._send_media_group(text, media_group, reply_to)
 
+        # Отправляем специальные вложения
         await self._send_special_attachments(attachments, message)
         return message
 
     def _process_attachment(self, att):
+        """Обработка медиа-вложений"""
         att_type = att['type']
         data = att[att_type]
         
@@ -104,6 +116,7 @@ class TelegramPoster:
         return None
 
     async def _send_text(self, text, reply_to):
+        """Отправка текстового сообщения"""
         try:
             return await self.bot.send_message(
                 chat_id=self.config.get('tg_channel_id'),
@@ -114,6 +127,7 @@ class TelegramPoster:
             logging.exception(f"Text message failed: {e}")
 
     async def _send_media_group(self, text, media_group, reply_to):
+        """Отправка медиа-группы"""
         try:
             if text and len(text) <= 1024:
                 media_group[0].caption = text[:1024]
@@ -129,10 +143,14 @@ class TelegramPoster:
             logging.exception(f"Media group failed: {e}")
 
     async def _send_special_attachments(self, attachments, reply_to):
+        """Отправка специальных вложений (документы, аудио, опросы)"""
         for att in attachments:
             try:
                 att_type = att['type']
                 data = att[att_type]
+
+                # Получаем ID сообщения для ответа
+                reply_id = reply_to.message_id if reply_to else None
 
                 if att_type == 'doc':
                     doc_url = data.get('url')
@@ -144,11 +162,12 @@ class TelegramPoster:
                     file_path = self._download_file(doc_url, file_name)
                     
                     if file_path:
-                        await self.bot.send_document(
-                            chat_id=self.config.get('tg_channel_id'),
-                            document=InputFile(file_path),
-                            reply_to_message_id=reply_to
-                        )
+                        with open(file_path, 'rb') as file:
+                            await self.bot.send_document(
+                                chat_id=self.config.get('tg_channel_id'),
+                                document=file,
+                                reply_to_message_id=reply_id
+                            )
                         os.remove(file_path)
 
                 elif att_type == 'audio':
@@ -163,13 +182,14 @@ class TelegramPoster:
                     file_path = self._download_file(file_url, file_name)
                     
                     if file_path:
-                        await self.bot.send_audio(
-                            chat_id=self.config.get('tg_channel_id'),
-                            audio=InputFile(file_path),
-                            title=title,
-                            performer=artist,
-                            reply_to_message_id=reply_to
-                        )
+                        with open(file_path, 'rb') as file:
+                            await self.bot.send_audio(
+                                chat_id=self.config.get('tg_channel_id'),
+                                audio=file,
+                                title=title,
+                                performer=artist,
+                                reply_to_message_id=reply_id
+                            )
                         os.remove(file_path)
 
                 elif att_type == 'poll':
@@ -178,7 +198,7 @@ class TelegramPoster:
                         question=data['question'],
                         options=[a['text'] for a in data['answers']],
                         allows_multiple_answers=data.get('multiple', False),
-                        reply_to_message_id=reply_to
+                        reply_to_message_id=reply_id
                     )
             except Exception as e:
                 logging.exception(f"Attachment failed: {e}")
