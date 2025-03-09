@@ -1,5 +1,9 @@
+import os
+import requests
+import uuid
+from urllib.parse import urlparse
 from aiogram import Bot
-from aiogram.types import InputMediaPhoto, InputMediaVideo
+from aiogram.types import InputMediaPhoto, InputMediaVideo, InputFile
 import logging
 import asyncio
 
@@ -8,14 +12,47 @@ class TelegramPoster:
         self.config = config
         self.vk_client = vk_client
         self.bot = Bot(token=self.config.get('tg_bot_token'))
+        self.files_dir = os.path.join(os.path.dirname(__file__), '..', 'files')
+        self._init_files_dir()
         logging.info('Telegram bot initialized')
+
+    def _init_files_dir(self):
+        os.makedirs(self.files_dir, exist_ok=True)
+
+    def _is_valid_url(self, url):
+        try:
+            result = urlparse(url)
+            return all([result.scheme, result.netloc])
+        except:
+            return False
+
+    def _download_file(self, url, file_name=None):
+        if not self._is_valid_url(url):
+            raise ValueError(f"Invalid URL: {url}")
+        
+        try:
+            response = requests.get(url, stream=True)
+            response.raise_for_status()
+            
+            if not file_name:
+                file_name = os.path.basename(urlparse(url).path) or f"file_{uuid.uuid4().hex}"
+            
+            file_path = os.path.join(self.files_dir, file_name)
+            
+            with open(file_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+            return file_path
+        except Exception as e:
+            logging.error(f"File download failed: {e}")
+            return None
 
     async def process_post(self, post):
         try:
             main_message = None
             repost = post.get('copy_history', [None])[0] if 'copy_history' in post else None
 
-            # Process main post
             if post.get('text') or post.get('attachments'):
                 main_message = await self._send_content(
                     text=post.get('text', ''),
@@ -23,7 +60,6 @@ class TelegramPoster:
                     reply_to=None
                 )
 
-            # Process repost
             if repost:
                 author = self.vk_client.get_author_name(repost['owner_id'])
                 repost_text = f"↘️ Repost from {author}"
@@ -43,19 +79,16 @@ class TelegramPoster:
         media_group = []
         message = None
         
-        # Create media group
         for att in attachments:
             media = self._process_attachment(att)
             if media:
                 media_group.append(media)
 
-        # Send text or media group
         if len(text) > 1024 or (not media_group and text):
             message = await self._send_text(text, reply_to)
         elif media_group:
             message = await self._send_media_group(text, media_group, reply_to)
 
-        # Send other attachments
         await self._send_special_attachments(attachments, message)
         return message
 
@@ -102,11 +135,43 @@ class TelegramPoster:
                 data = att[att_type]
 
                 if att_type == 'doc':
-                    await self.bot.send_document(
-                        chat_id=self.config.get('tg_channel_id'),
-                        document=data['url'],
-                        reply_to_message_id=reply_to
-                    )
+                    doc_url = data.get('url')
+                    if not doc_url:
+                        continue
+                    
+                    file_ext = data.get('ext', 'bin')
+                    file_name = f"{data.get('title', 'document')}.{file_ext}"
+                    file_path = self._download_file(doc_url, file_name)
+                    
+                    if file_path:
+                        await self.bot.send_document(
+                            chat_id=self.config.get('tg_channel_id'),
+                            document=InputFile(file_path),
+                            reply_to_message_id=reply_to
+                        )
+                        os.remove(file_path)
+
+                elif att_type == 'audio':
+                    artist = data.get('artist', 'Unknown Artist')
+                    title = data.get('title', 'Unknown Track')
+                    file_name = f"{artist} - {title}.mp3".replace('/', '_')
+                    file_url = data.get('url')
+                    
+                    if not file_url:
+                        continue
+                    
+                    file_path = self._download_file(file_url, file_name)
+                    
+                    if file_path:
+                        await self.bot.send_audio(
+                            chat_id=self.config.get('tg_channel_id'),
+                            audio=InputFile(file_path),
+                            title=title,
+                            performer=artist,
+                            reply_to_message_id=reply_to
+                        )
+                        os.remove(file_path)
+
                 elif att_type == 'poll':
                     await self.bot.send_poll(
                         chat_id=self.config.get('tg_channel_id'),

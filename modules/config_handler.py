@@ -1,4 +1,3 @@
-# modules/config_handler.py
 import json
 import os
 import time
@@ -35,7 +34,13 @@ class ConfigHandler:
             with open(self.config_path, 'r', encoding='utf-8') as f:
                 config = json.load(f)
                 for key in default_config:
-                    if key not in config:
+                    if key in config:
+                        expected_type = type(default_config[key])
+                        try:
+                            config[key] = expected_type(config[key])
+                        except (TypeError, ValueError):
+                            config[key] = default_config[key]
+                    else:
                         config[key] = default_config[key]
                 return config
         except Exception as e:

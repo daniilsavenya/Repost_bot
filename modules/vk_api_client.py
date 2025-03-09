@@ -30,12 +30,31 @@ class VKClient:
             response = self.vk.wall.get(
                 owner_id=self.config.get('vk_user_id'),
                 count=10,
-                filter='owner'
+                filter='owner',
+                extended=1
             )
-            return response['items']
+            return self._process_posts(response['items'])
         except Exception as e:
             logging.exception(f"Posts fetch error: {e}")
             return []
+
+    def _process_posts(self, items):
+        processed = []
+        for item in items:
+            post = item.copy()
+            if 'attachments' in post:
+                for att in post['attachments']:
+                    if att['type'] == 'audio':
+                        att['audio'] = self._get_audio_info(att['audio'])
+            processed.append(post)
+        return processed
+
+    def _get_audio_info(self, audio_data):
+        return {
+            'artist': audio_data.get('artist', 'Unknown Artist'),
+            'title': audio_data.get('title', 'Unknown Track'),
+            'url': audio_data.get('url')
+        }
 
     def get_author_name(self, owner_id):
         try:
@@ -43,7 +62,7 @@ class VKClient:
                 user = self.vk.users.get(user_ids=owner_id, fields='first_name,last_name')[0]
                 return f"{user['first_name']} {user['last_name']}"
             else:
-                group = self.vk.groups.getById(group_id=abs(owner_id))[0]
+                group = self.vk.groups.getById(group_ids=str(abs(owner_id)))[0]
                 return group['name']
         except Exception as e:
             logging.exception(f"Author info error: {e}")

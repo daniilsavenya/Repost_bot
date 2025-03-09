@@ -135,3 +135,4 @@ config.json
 .*env/
 *.txt
 Repost_bot.code-workspace
+code.txt
