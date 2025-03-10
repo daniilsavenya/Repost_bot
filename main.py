@@ -3,6 +3,7 @@ import asyncio
 import logging
 import sys
 import os
+from datetime import datetime
 from modules.config_handler import ConfigHandler
 from modules.vk_api_client import VKClient
 from modules.telegram_bot import TelegramPoster
@@ -62,7 +63,7 @@ class VK2TG:
                 await self.tg.process_post(post)
                 # Обновляем конфигурацию с датой публикации этого поста
                 self.config.set('last_post_date', post['date'])
-                logging.info(f"Успешно опубликована запись с датой: {post['date']}")
+                logging.info(f"Успешно опубликована запись с датой: {datetime.fromtimestamp(post['date']).strftime('%Y-%m-%d %H:%M:%S')}")
             except Exception as e:
                 logging.exception(f"Ошибка при обработке записи с датой {post['date']}: {e}")
             # Если есть следующие записи в очереди, ждём 2 часа перед следующей публикацией

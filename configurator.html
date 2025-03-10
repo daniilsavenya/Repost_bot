@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Конфигуратор репост-бота</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .step {
+            margin-bottom: 2rem;
+            padding: 1rem;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        input {
+            display: block;
+            width: 100%;
+            margin: 10px 0;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        pre {
+            background: #f4f4f4;
+            padding: 1rem;
+            border-radius: 4px;
+            white-space: pre-wrap;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <!-- Шаг 1: Приветствие -->
+    <div id="step1" class="step">
+        <h1>Добро пожаловать!</h1>
+        <p>Для настройки репост-бота выполните следующие шаги:</p>
+        <button onclick="startVKAuth()">Начать настройку</button>
+    </div>
+
+    <!-- Шаг 2: Настройка Telegram -->
+    <div id="step2" class="step hidden">
+        <h2>Настройка Telegram</h2>
+        <input type="text" id="tgChannelId" placeholder="ID канала (например: -100123456789)">
+        <input type="text" id="tgBotToken" placeholder="Токен бота Telegram">
+        <button onclick="generateConfig()">Сгенерировать конфиг</button>
+    </div>
+
+    <!-- Шаг 3: Результат конфигурации -->
+    <div id="step3" class="step hidden">
+        <h2>Скопируйте или скачайте конфигурацию</h2>
+        <button onclick="copyConfig()">Скопировать</button>
+        <button onclick="downloadConfig()">Скачать файл</button>
+        <pre id="configOutput"></pre>
+    </div>
+
+    <script>
+        let vkAccessToken = null;
+        let vkUserId = null;
+
+        // Парсинг параметров URL после авторизации
+        function parseHashParams() {
+            const hash = window.location.hash.substring(1);
+            const params = new URLSearchParams(hash);
+            
+            if(params.has('access_token')) {
+                vkAccessToken = params.get('access_token');
+                vkUserId = params.get('user_id');
+                showStep(2);
+            }
+        }
+
+        // Запуск авторизации ВКонтакте
+        function startVKAuth() {
+            const clientId = '6437068'; // Замените на реальный ID
+            const scope = ['wall', 'photos', 'audio', 'docs', 'offline'].join(',');
+            const redirectUri = encodeURIComponent(window.location.href.split('#')[0]);
+            
+            const authUrl = `https://oauth.vk.com/authorize?
+                client_id=${clientId}&
+                redirect_uri=${redirectUri}&
+                scope=${scope}&
+                response_type=token&
+                v=5.131&
+                display=page`;
+
+            window.location.href = authUrl;
+        }
+
+        // Генерация конфига
+        function generateConfig() {
+            const tgChannelId = document.getElementById('tgChannelId').value.trim();
+            const tgBotToken = document.getElementById('tgBotToken').value.trim();
+            
+            if(!/^-\d+$/.test(tgChannelId)) {
+                alert('ID канала должен быть отрицательным числом!');
+                return;
+            }
+
+            const config = {
+                vk_user_id: parseInt(vkUserId),
+                tg_channel_id: parseInt(tgChannelId),
+                tg_bot_token: tgBotToken,
+                vk_access_token: vkAccessToken,
+                last_post_date: Math.floor(Date.now() / 1000),
+                log_level: "INFO"
+            };
+
+            document.getElementById('configOutput').textContent = JSON.stringify(config, null, 2);
+            showStep(3);
+        }
+
+        // Копирование конфига
+        function copyConfig() {
+            const textarea = document.createElement('textarea');
+            textarea.value = document.getElementById('configOutput').textContent;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            alert('Конфигурация скопирована!');
+        }
+
+        // Скачивание файла
+        function downloadConfig() {
+            const data = JSON.stringify(JSON.parse(document.getElementById('configOutput').textContent), null, 2);
+            const blob = new Blob([data], {type: 'application/json'});
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'config.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // Управление шагами
+        function showStep(stepNumber) {
+            document.querySelectorAll('.step').forEach(div => div.classList.add('hidden'));
+            document.getElementById(`step${stepNumber}`).classList.remove('hidden');
+        }
+
+        // Инициализация
+        window.onload = function() {
+            parseHashParams();
+            if(!vkAccessToken) showStep(1);
+        }
+    </script>
+</body>
+</html>
