@@ -5,6 +5,7 @@ import logging
 
 class ConfigHandler:
     def __init__(self, config_path=None):
+        """Initialize configuration handler"""
         self.config_path = config_path or os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             'config.json'
@@ -13,6 +14,7 @@ class ConfigHandler:
         logging.info('Configuration loaded successfully')
 
     def _load_config(self):
+        """Load or create configuration file"""
         default_config = {
             "vk_user_id": 0,
             "tg_channel_id": "",
@@ -37,6 +39,7 @@ class ConfigHandler:
             return default_config
 
     def save(self):
+        """Save current configuration to file"""
         try:
             with open(self.config_path, 'w', encoding='utf-8') as f:
                 json.dump(self.config, f, indent=4, ensure_ascii=False)
@@ -44,8 +47,10 @@ class ConfigHandler:
             logging.error(f'Failed to save config: {str(e)}')
 
     def get(self, key, default=None):
+        """Get configuration value by key"""
         return self.config.get(key, default)
 
     def set(self, key, value):
+        """Set configuration value"""
         self.config[key] = value
         self.save()

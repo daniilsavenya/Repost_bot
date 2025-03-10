@@ -4,64 +4,82 @@ from aiogram.types import InputMediaPhoto, InputMediaVideo, BufferedInputFile, U
 import logging
 import asyncio
 from datetime import datetime
+import re
 
 class TelegramPoster:
     def __init__(self, config, vk_client):
+        """Initialize Telegram bot with configuration and VK client"""
         self.config = config
         self.vk_client = vk_client
         self.bot = Bot(token=self.config.get('tg_bot_token'))
         logging.info('Telegram bot initialized')
 
     async def process_post(self, post):
+        """Process and publish a VK post to Telegram including reposts"""
         try:
-            main_message = None
-            repost = post.get('copy_history', [None])[0] if post.get('copy_history') else None
-
-            # Process main content
-            if post.get('text') or post.get('attachments'):
-                main_message = await self._send_content(
-                    text=post.get('text', ''),
-                    attachments=post.get('attachments', []),
-                    reply_to=None
-                )
-
-            # Process repost
-            if repost and repost.get('owner_id'):
-                author = self.vk_client.get_author_name(repost['owner_id'])
-                repost_text = f"↘️ Repost from {author}"
-                if repost.get('text'):
-                    repost_text += f":\n{repost['text']}"
-                
-                await self._send_content(
-                    text=repost_text,
-                    attachments=repost.get('attachments', []),
-                    reply_to=main_message.message_id if main_message else None
-                )
-
-            log_date = datetime.fromtimestamp(post['date']).strftime('%Y-%m-%d %H:%M:%S')
-            logging.info(f"Successfully published post from {log_date}")
-
+            main_message = await self._process_main_post(post)
+            await self._process_reposts(post, main_message)
+            self._log_success(post)
+            
         except Exception as e:
             logging.exception(f"Post processing error: {str(e)}")
 
+    async def _process_main_post(self, post):
+        """Handle main post content"""
+        if post.get('text') or post.get('attachments'):
+            return await self._send_content(
+                text=post.get('text', ''),
+                attachments=post.get('attachments', []),
+                reply_to=None
+            )
+        return None
+
+    async def _process_reposts(self, post, main_message):
+        """Handle nested reposts structure"""
+        reposts = post.get('copy_history', [])
+        for repost in reversed(reposts):
+            if not repost.get('owner_id'):
+                continue
+                
+            await self._send_repost_content(repost, main_message)
+
+    async def _send_repost_content(self, repost, main_message):
+        """Process and send repost content"""
+        author = self.vk_client.get_author_name(repost['owner_id'])
+        repost_text = f"↘️ Repost from {author}"
+        
+        if repost.get('text'):
+            repost_text += f":\n{repost['text']}"
+        
+        await self._send_content(
+            text=repost_text,
+            attachments=repost.get('attachments', []),
+            reply_to=main_message.message_id if main_message else None
+        )
+
     async def _send_content(self, text, attachments, reply_to):
+        """Manage content sending strategy based on content type"""
         media_group = []
         message = None
         
+        # Process all attachments
         for att in attachments:
             media = self._process_attachment(att)
             if media:
                 media_group.append(media)
 
+        # Determine sending strategy
         if len(text) > 1024 or (not media_group and text):
             message = await self._send_text(text, reply_to)
         elif media_group:
             message = await self._send_media_group(text, media_group, reply_to)
 
+        # Handle special attachments
         await self._send_special_attachments(attachments, message)
         return message
 
     def _process_attachment(self, att):
+        """Create media object from VK attachment"""
         att_type = att['type']
         data = att[att_type]
         
@@ -75,6 +93,7 @@ class TelegramPoster:
         return None
 
     async def _send_text(self, text, reply_to):
+        """Send text message to Telegram channel"""
         try:
             return await self.bot.send_message(
                 chat_id=self.config.get('tg_channel_id'),
@@ -85,6 +104,7 @@ class TelegramPoster:
             logging.exception(f"Failed to send text: {str(e)}")
 
     async def _send_media_group(self, text, media_group, reply_to):
+        """Send media group with optional caption"""
         try:
             if text and len(text) <= 1024:
                 media_group[0].caption = text[:1024]
@@ -100,6 +120,7 @@ class TelegramPoster:
             logging.exception(f"Failed to send media group: {str(e)}")
 
     async def _send_special_attachments(self, attachments, reply_to):
+        """Handle special attachment types separately"""
         for att in attachments:
             try:
                 att_type = att['type']
@@ -117,6 +138,7 @@ class TelegramPoster:
                 logging.exception(f"Attachment error ({att_type}): {str(e)}")
 
     async def _handle_document(self, data, reply_id):
+        """Process and send document attachment"""
         if not (url := data.get('url')):
             return
 
@@ -140,6 +162,7 @@ class TelegramPoster:
         )
 
     async def _handle_audio(self, data, reply_id):
+        """Process and send audio attachment"""
         if not (url := data.get('url')):
             return
 
@@ -159,6 +182,7 @@ class TelegramPoster:
         )
 
     async def _handle_poll(self, data, reply_id):
+        """Process and send poll attachment"""
         await self.bot.send_poll(
             chat_id=self.config.get('tg_channel_id'),
             question=data['question'],
@@ -168,11 +192,28 @@ class TelegramPoster:
         )
 
     def _sanitize_filename(self, title, ext):
-        clean_title = "".join([c for c in title if c.isalnum() or c in (' ', '_')]).strip()
-        clean_ext = ext.split('.')[-1][:10]
-        return f"{clean_title[:64]}.{clean_ext}"
+        """Generate safe filename without duplicate extensions"""
+        # Clean title and remove special characters
+        clean_title = re.sub(r'[^\w\-_\. ]', '', title.strip())[:64]
+        
+        # Process extension: split from right and take last part
+        clean_ext = ext.split('.')[-1].strip()[:10]
+        if not clean_ext:
+            clean_ext = 'bin'
+            
+        # Remove existing extension from title if present
+        if '.' in clean_title:
+            clean_title = clean_title.rsplit('.', 1)[0]
+            
+        return f"{clean_title}.{clean_ext}".strip('.')
 
     def _generate_audio_name(self, artist, title):
+        """Generate filename for audio tracks"""
         clean_artist = "".join([c for c in artist if c.isalnum() or c in (' ', '_')])[:32]
         clean_title = "".join([c for c in title if c.isalnum() or c in (' ', '_')])[:32]
         return f"{clean_artist} - {clean_title}.mp3"
+
+    def _log_success(self, post):
+        """Log successful post processing"""
+        log_date = datetime.fromtimestamp(post['date']).strftime('%Y-%m-%d %H:%M:%S')
+        logging.info(f"Successfully published post from {log_date}")

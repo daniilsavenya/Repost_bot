@@ -21,6 +21,7 @@ class VK2TG:
         self.tg = TelegramPoster(self.config, self.vk)
 
     def _setup_logging(self):
+        """Initialize logging configuration"""
         log_filename = os.path.join(os.path.dirname(__file__), 'vk2tg.log')
         logging.basicConfig(
             filename=log_filename,
@@ -33,6 +34,7 @@ class VK2TG:
         logging.getLogger().addHandler(console)
 
     def _validate_config(self):
+        """Validate required configuration parameters"""
         required_keys = {
             'vk_access_token': "VK access token",
             'vk_user_id': "VK user ID",
@@ -52,6 +54,7 @@ class VK2TG:
         return True
 
     async def _process_posts(self, posts):
+        """Process and publish new posts"""
         last_post_date = self.config.get('last_post_date') or 0
         new_posts = [p for p in posts if p['date'] > last_post_date]
         new_posts.sort(key=lambda x: x['date'])
@@ -71,9 +74,11 @@ class VK2TG:
                 await asyncio.sleep(7200)
 
     def _format_date(self, timestamp):
+        """Convert timestamp to readable format"""
         return datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
 
     async def monitor(self):
+        """Main monitoring loop"""
         while True:
             try:
                 posts = self.vk.get_new_posts()
