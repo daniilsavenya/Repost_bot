@@ -1,12 +1,6 @@
 import requests
-from urllib.parse import urlparse
 from aiogram import Bot
-from aiogram.types import (
-    InputMediaPhoto,
-    InputMediaVideo,
-    BufferedInputFile,
-    URLInputFile
-)
+from aiogram.types import InputMediaPhoto, InputMediaVideo, BufferedInputFile, URLInputFile
 import logging
 import asyncio
 from datetime import datetime
@@ -19,12 +13,11 @@ class TelegramPoster:
         logging.info('Telegram bot initialized')
 
     async def process_post(self, post):
-        """Основной метод обработки поста"""
         try:
             main_message = None
-            repost = post.get('copy_history', [None])[0] if 'copy_history' in post else None
+            repost = post.get('copy_history', [None])[0] if post.get('copy_history') else None
 
-            # Обработка основного контента
+            # Process main content
             if post.get('text') or post.get('attachments'):
                 main_message = await self._send_content(
                     text=post.get('text', ''),
@@ -32,8 +25,8 @@ class TelegramPoster:
                     reply_to=None
                 )
 
-            # Обработка репоста
-            if repost:
+            # Process repost
+            if repost and repost.get('owner_id'):
                 author = self.vk_client.get_author_name(repost['owner_id'])
                 repost_text = f"↘️ Repost from {author}"
                 if repost.get('text'):
@@ -45,36 +38,30 @@ class TelegramPoster:
                     reply_to=main_message.message_id if main_message else None
                 )
 
-            # Логирование с конвертацией времени
             log_date = datetime.fromtimestamp(post['date']).strftime('%Y-%m-%d %H:%M:%S')
-            logging.info(f"Успешно опубликована запись от {log_date}")
+            logging.info(f"Successfully published post from {log_date}")
 
         except Exception as e:
-            logging.exception(f"Ошибка обработки поста: {e}")
+            logging.exception(f"Post processing error: {str(e)}")
 
     async def _send_content(self, text, attachments, reply_to):
-        """Управление отправкой контента"""
         media_group = []
         message = None
         
-        # Формирование медиа-группы
         for att in attachments:
             media = self._process_attachment(att)
             if media:
                 media_group.append(media)
 
-        # Выбор стратегии отправки
         if len(text) > 1024 or (not media_group and text):
             message = await self._send_text(text, reply_to)
         elif media_group:
             message = await self._send_media_group(text, media_group, reply_to)
 
-        # Отправка специальных вложений
         await self._send_special_attachments(attachments, message)
         return message
 
     def _process_attachment(self, att):
-        """Создание объектов медиа"""
         att_type = att['type']
         data = att[att_type]
         
@@ -88,7 +75,6 @@ class TelegramPoster:
         return None
 
     async def _send_text(self, text, reply_to):
-        """Отправка текста"""
         try:
             return await self.bot.send_message(
                 chat_id=self.config.get('tg_channel_id'),
@@ -96,10 +82,9 @@ class TelegramPoster:
                 reply_to_message_id=reply_to
             )
         except Exception as e:
-            logging.exception(f"Ошибка отправки текста: {e}")
+            logging.exception(f"Failed to send text: {str(e)}")
 
     async def _send_media_group(self, text, media_group, reply_to):
-        """Отправка группы медиа"""
         try:
             if text and len(text) <= 1024:
                 media_group[0].caption = text[:1024]
@@ -112,10 +97,9 @@ class TelegramPoster:
             )
             return messages[0] if messages else None
         except Exception as e:
-            logging.exception(f"Ошибка медиа-группы: {e}")
+            logging.exception(f"Failed to send media group: {str(e)}")
 
     async def _send_special_attachments(self, attachments, reply_to):
-        """Отправка специальных вложений"""
         for att in attachments:
             try:
                 att_type = att['type']
@@ -130,10 +114,9 @@ class TelegramPoster:
                     await self._handle_poll(data, reply_id)
 
             except Exception as e:
-                logging.exception(f"Ошибка вложения ({att_type}): {e}")
+                logging.exception(f"Attachment error ({att_type}): {str(e)}")
 
     async def _handle_document(self, data, reply_id):
-        """Обработка документов"""
         if not (url := data.get('url')):
             return
 
@@ -157,7 +140,6 @@ class TelegramPoster:
         )
 
     async def _handle_audio(self, data, reply_id):
-        """Обработка аудио"""
         if not (url := data.get('url')):
             return
 
@@ -177,7 +159,6 @@ class TelegramPoster:
         )
 
     async def _handle_poll(self, data, reply_id):
-        """Обработка опросов"""
         await self.bot.send_poll(
             chat_id=self.config.get('tg_channel_id'),
             question=data['question'],
@@ -187,13 +168,11 @@ class TelegramPoster:
         )
 
     def _sanitize_filename(self, title, ext):
-        """Генерация безопасного имени файла"""
         clean_title = "".join([c for c in title if c.isalnum() or c in (' ', '_')]).strip()
         clean_ext = ext.split('.')[-1][:10]
         return f"{clean_title[:64]}.{clean_ext}"
 
     def _generate_audio_name(self, artist, title):
-        """Генерация имени аудиофайла"""
         clean_artist = "".join([c for c in artist if c.isalnum() or c in (' ', '_')])[:32]
         clean_title = "".join([c for c in title if c.isalnum() or c in (' ', '_')])[:32]
         return f"{clean_artist} - {clean_title}.mp3"

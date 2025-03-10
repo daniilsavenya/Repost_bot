@@ -1,4 +1,3 @@
-# main.py
 import asyncio
 import logging
 import sys
@@ -7,78 +6,81 @@ from datetime import datetime
 from modules.config_handler import ConfigHandler
 from modules.vk_api_client import VKClient
 from modules.telegram_bot import TelegramPoster
-from configurator import Configurator
 
 class VK2TG:
     def __init__(self):
-        self._setup_logging(logging.INFO)
-        self.config = ConfigHandler(sys.argv[1] if len(sys.argv)>1 else None)
+        self._setup_logging()
+        self.config = ConfigHandler(sys.argv[1] if len(sys.argv) > 1 else None)
         
-        log_level_str = self.config.get('log_level') or 'INFO'
-        log_level = getattr(logging, log_level_str.upper(), logging.INFO)
-        logging.getLogger().setLevel(log_level)
-        for handler in logging.getLogger().handlers:
-            handler.setLevel(log_level)
-
-        if not self.config.config or not self.config.get('vk_access_token') or not self.config.get('vk_user_id'):
-            print("Configuration file missing or incomplete. Starting setup...")
-            Configurator().setup()
-            self.config = ConfigHandler()
+        if not self._validate_config():
+            print("Error: Invalid configuration. Please create config first:")
+            print("https://daniilsavenya.github.io/Repost_bot/configurator.html")
+            sys.exit(1)
 
         self.vk = VKClient(self.config)
         self.tg = TelegramPoster(self.config, self.vk)
 
-    def _setup_logging(self, log_level):
+    def _setup_logging(self):
         log_filename = os.path.join(os.path.dirname(__file__), 'vk2tg.log')
-        if not os.path.exists(log_filename):
-            open(log_filename, 'a').close()
-
         logging.basicConfig(
             filename=log_filename,
-            level=log_level,
+            level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s',
             force=True
         )
         console = logging.StreamHandler()
-        console.setLevel(log_level)
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-        console.setFormatter(formatter)
-        logging.getLogger('').addHandler(console)
+        console.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logging.getLogger().addHandler(console)
 
-    async def post_processing(self, posts):
-        # Получаем дату последней опубликованной записи (unix timestamp)
+    def _validate_config(self):
+        required_keys = {
+            'vk_access_token': "VK access token",
+            'vk_user_id': "VK user ID",
+            'tg_channel_id': "Telegram channel ID",
+            'tg_bot_token': "Telegram bot token"
+        }
+        
+        missing = [name for key, name in required_keys.items() if not self.config.get(key)]
+        if missing:
+            logging.error(f"Missing configuration parameters: {', '.join(missing)}")
+            return False
+            
+        if self.config.get('tg_channel_id', 0) >= 0:
+            logging.error("Telegram Channel ID must be negative (channel chat)")
+            return False
+            
+        return True
+
+    async def _process_posts(self, posts):
         last_post_date = self.config.get('last_post_date') or 0
-        # Фильтруем записи, опубликованные после last_post_date
         new_posts = [p for p in posts if p['date'] > last_post_date]
-        # Сортируем по возрастанию даты публикации
         new_posts.sort(key=lambda x: x['date'])
 
         if not new_posts:
-            logging.info("Нет новых записей для публикации.")
+            logging.info("No new posts to publish")
             return
 
-        # Если в очереди более одного поста, публикуем с интервалом в 2 часа (7200 секунд)
         for i, post in enumerate(new_posts):
             try:
                 await self.tg.process_post(post)
-                # Обновляем конфигурацию с датой публикации этого поста
                 self.config.set('last_post_date', post['date'])
-                logging.info(f"Успешно опубликована запись с датой: {datetime.fromtimestamp(post['date']).strftime('%Y-%m-%d %H:%M:%S')}")
+                logging.info(f"Published post from {self._format_date(post['date'])}")
             except Exception as e:
-                logging.exception(f"Ошибка при обработке записи с датой {post['date']}: {e}")
-            # Если есть следующие записи в очереди, ждём 2 часа перед следующей публикацией
+                logging.exception(f"Post processing error: {str(e)}")
             if i < len(new_posts) - 1:
                 await asyncio.sleep(7200)
+
+    def _format_date(self, timestamp):
+        return datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
 
     async def monitor(self):
         while True:
             try:
                 posts = self.vk.get_new_posts()
-                await self.post_processing(posts)
-                await asyncio.sleep(60)
+                await self._process_posts(posts)
             except Exception as e:
-                logging.exception(f"Ошибка мониторинга: {e}")
-                await asyncio.sleep(60)
+                logging.exception(f"Monitoring error: {str(e)}")
+            await asyncio.sleep(60)
 
 if __name__ == '__main__':
     bot = VK2TG()
