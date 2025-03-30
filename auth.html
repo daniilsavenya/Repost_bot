@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>VK Authorization</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .step {
+            margin-bottom: 2rem;
+            padding: 1rem;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .token-box {
+            background: #f4f4f4;
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 4px;
+            word-wrap: break-word;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="step1" class="step">
+        <h1>VK Authorization</h1>
+        <p>Click the button to authorize with VK:</p>
+        <button onclick="startVKAuth()">Authorize with VK</button>
+    </div>
+
+    <div id="step2" class="step hidden">
+        <h2>Authorization Successful</h2>
+        <div class="token-box">
+            <p>User ID: <span id="userId"></span></p>
+            <button onclick="copyUserId()">Copy User ID</button>
+        </div>
+        <div class="token-box">
+            <p>Access Token: <span id="accessToken"></span></p>
+            <button onclick="copyAccessToken()">Copy Access Token</button>
+        </div>
+        <p>These credentials will remain valid until the user revokes access.</p>
+    </div>
+
+    <script>
+        function parseHashParams() {
+            const hash = window.location.hash.substring(1);
+            const params = new URLSearchParams(hash);
+            
+            if(params.has('access_token')) {
+                const accessToken = params.get('access_token');
+                const userId = params.get('user_id');
+                
+                document.getElementById('userId').textContent = userId;
+                document.getElementById('accessToken').textContent = accessToken;
+                showStep(2);
+                
+                // Clean URL after successful auth
+                history.replaceState(null, null, ' ');
+            }
+        }
+
+        function startVKAuth() {
+            const clientId = '6437068';
+            const scope = ['wall', 'photos', 'audio', 'docs', 'offline'].join();
+            const redirectUri = window.location.href;
+            
+            const authUrl = `https://oauth.vk.com/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scope}&response_type=token&v=5.131&display=page`;
+            window.location.href = authUrl;
+        }
+
+        function copyUserId() {
+            copyToClipboard(document.getElementById('userId').textContent, 'User ID');
+        }
+
+        function copyAccessToken() {
+            copyToClipboard(document.getElementById('accessToken').textContent, 'Access Token');
+        }
+
+        function copyToClipboard(text, label) {
+            navigator.clipboard.writeText(text)
+                .then(() => alert(`${label} copied to clipboard!`))
+                .catch(err => console.error('Copy failed:', err));
+        }
+
+        function showStep(stepNumber) {
+            document.querySelectorAll('.step').forEach(div => div.classList.add('hidden'));
+            document.getElementById(`step${stepNumber}`).classList.remove('hidden');
+        }
+
+        window.onload = function() {
+            parseHashParams();
+            if(!document.getElementById('userId').textContent) showStep(1);
+        }
+    </script>
+</body>
+</html>
