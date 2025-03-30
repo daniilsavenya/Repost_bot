@@ -3,12 +3,9 @@ Description=My Python Project
 After=network.target
 
 [Service]
-User=username  # Укажите вашего пользователя
-Group=usergroup # Группа пользователя
-WorkingDirectory=/opt/Repost_bot
 ExecStart=/opt/Repost_bot/.env/bin/python3 /opt/Repost_bot/main.py
 Restart=on failure
 RestartSec=3
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target

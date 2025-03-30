@@ -14,7 +14,7 @@ class VK2TG:
         
         if not self._validate_config():
             print("Error: Invalid configuration. Please create config first:")
-            print("https://daniilsavenya.github.io/Repost_bot/configurator.html")
+            print("https://daniilsavenya.github.io/Repost_bot/auth.html")
             sys.exit(1)
 
         self.vk = VKClient(self.config)
