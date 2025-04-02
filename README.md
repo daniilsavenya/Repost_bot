@@ -1,7 +1,7 @@
 # VK2TG Repost Bot
 Автоматический репостер из VK в Telegram!
 
-[🇬🇧 Switch to English version](#README-EN.md)
+[🇬🇧 Switch to English version](README-EN.md)
 
 > 98% кода разработано при помощи нейросети [Deepseek](https://deepseek.com)
 
